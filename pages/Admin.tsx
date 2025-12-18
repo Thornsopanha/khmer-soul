@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { Category, ContentItem, SiteSetting } from '../types';
-import { Plus, Trash2, Edit2, Save, X, Image as ImageIcon, Layout, FileText, LogOut, Music, Upload, Loader2, Settings, Link, Map as MapIcon } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Image as ImageIcon, Layout, FileText, LogOut, Music, Upload, Loader, Settings, Link, Map as MapIcon } from 'lucide-react';
 
 // --- Helper Components ---
 
@@ -24,7 +24,7 @@ const FileUploader = ({ onFileSelect, uploading, accept, label, icon, note, clas
         disabled={uploading}
         className={`w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-700 text-stone-300 px-4 py-3 rounded border border-stone-700 transition-colors shadow-sm hover:shadow-md ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
-        {uploading ? <Loader2 size={18} className="animate-spin" /> : (icon || <Upload size={18} />)}
+        {uploading ? <Loader size={18} className="animate-spin" /> : (icon || <Upload size={18} />)}
         <span className="text-sm font-medium">{label || 'Upload'}</span>
       </button>
       {note && <p className="text-[10px] text-stone-500 mt-1">{note}</p>}
@@ -118,36 +118,72 @@ const Admin: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchData();
-      else setLoading(false);
-    });
+    let mounted = true;
+
+    const initSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (mounted) {
+          setSession(session);
+          if (session) {
+             await fetchData();
+          } else {
+             setLoading(false);
+          }
+        }
+      } catch (error) {
+        console.error("Session check failed", error);
+        if (mounted) setLoading(false);
+      }
+    };
+
+    initSession();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) fetchData();
+      if (mounted) {
+        setSession(session);
+        if (session) {
+           // We can re-fetch or just let the session state handle it.
+           // Usually better to fetch if we just logged in.
+           fetchData();
+        } else {
+             // User logged out
+             setLoading(false);
+        }
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchData = async () => {
-    // Only set global loading on initial fetch
+    // Only set global loading on initial fetch if we have no data
     if (categories.length === 0) setLoading(true);
 
-    const { data: cats } = await supabase.from('categories').select('*').order('order');
-    if (cats) setCategories(cats);
+    try {
+      const { data: cats, error: catsError } = await supabase.from('categories').select('*').order('order');
+      if (catsError) throw catsError;
+      if (cats) setCategories(cats);
 
-    const { data: its } = await supabase.from('content_items').select('*').order('created_at', { ascending: false });
-    if (its) setItems(its);
+      const { data: its, error: itemsError } = await supabase.from('content_items').select('*').order('created_at', { ascending: false });
+      if (itemsError) throw itemsError;
+      if (its) setItems(its);
 
-    const { data: sets } = await supabase.from('site_settings').select('*');
-    if (sets) setSettings(sets);
+      const { data: sets, error: settingsError } = await supabase.from('site_settings').select('*');
+      if (settingsError) throw settingsError;
+      if (sets) setSettings(sets);
 
-    setLoading(false);
+    } catch (error) {
+      console.error("Error fetching admin data:", error);
+      // alert("Failed to load admin data."); // Optional generic alert
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -389,7 +425,12 @@ const Admin: React.FC = () => {
   };
 
   if (!session) {
-    if (loading) return <div className="min-h-screen bg-stone-950 flex items-center justify-center text-stone-500">Loading...</div>;
+    if (loading) return (
+      <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center text-amber-500 gap-4">
+        <Loader size={48} className="animate-spin" />
+        <p className="text-stone-400 font-serif tracking-widest animate-pulse">Accessing Secure Archives...</p>
+      </div>
+    );
     return <Login onLogin={() => { }} />;
   }
 
@@ -463,7 +504,7 @@ const Admin: React.FC = () => {
                       className="p-2 text-stone-400 hover:text-red-500 hover:bg-stone-800 rounded transition-colors disabled:opacity-50"
                       title="Delete"
                     >
-                      {deletingId === cat.id ? <Loader2 size={18} className="animate-spin text-red-500" /> : <Trash2 size={18} />}
+                      {deletingId === cat.id ? <Loader size={18} className="animate-spin text-red-500" /> : <Trash2 size={18} />}
                     </button>
                   </div>
                 </div>
@@ -515,7 +556,7 @@ const Admin: React.FC = () => {
                               className="p-2 text-stone-400 hover:text-red-500 hover:bg-stone-800 rounded transition-colors disabled:opacity-50"
                               title="Delete"
                             >
-                              {deletingId === item.id ? <Loader2 size={18} className="animate-spin text-red-500" /> : <Trash2 size={18} />}
+                              {deletingId === item.id ? <Loader size={18} className="animate-spin text-red-500" /> : <Trash2 size={18} />}
                             </button>
                           </div>
                         </div>
